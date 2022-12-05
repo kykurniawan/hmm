@@ -1,0 +1,19 @@
+{
+    "name": "kykurniawan/hmm",
+    "description": "hmm...",
+    "type": "project",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Kykurniawan\\Hmm\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "kykurniawan",
+            "email": "contact.rizkykurniawan@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {}
+}
