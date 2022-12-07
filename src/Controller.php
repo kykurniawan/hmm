@@ -7,18 +7,18 @@ class Controller
     /**
      * @var \Kykurniawan\Hmm\Hmm
      */
-    private Hmm $app;
+    private Hmm $hmm;
 
-    public function init(Hmm $app)
+    public function init(Hmm $hmm)
     {
-        $this->app = $app;
+        $this->hmm = $hmm;
     }
 
     /**
      * @return \Kykurniawan\Hmm\Hmm
      */
-    public function app(): Hmm
+    public function hmm(): Hmm
     {
-        return $this->app;
+        return $this->hmm;
     }
 }

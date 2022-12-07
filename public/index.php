@@ -6,13 +6,18 @@ use Kykurniawan\Hmm\Response;
 
 require_once '../vendor/autoload.php';
 
-$app = new Hmm([
-    'base_url' => 'http://127.0.0.1/hmm/public/',
-    'view_path' => '../views',
+$hmm = new Hmm([
+    Hmm::CONF_BASE_URL => 'http://127.0.0.1/hmm/public/',
+    Hmm::CONF_VIEW_PATH => '../views',
+    Hmm::CONF_PUBLIC_PATH => './',
 ]);
 
-$app->get('/', function (Request $request, Response $response) {
+$hmm->get('/', function (Request $request, Response $response) {
     return $response->view('index');
 });
 
-$app->run();
+$hmm->get('redirect', function (Request $request, Response $response) {
+    return $response->redirect($request->hmm()->config(Hmm::CONF_BASE_URL));
+});
+
+$hmm->run();

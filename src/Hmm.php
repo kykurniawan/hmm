@@ -8,9 +8,12 @@ use Kykurniawan\Hmm\Exceptions\PageNotFoundException;
 
 class Hmm
 {
-    const GET = 'GET';
-    const POST = 'POST';
-    const SUPPORTED_METHODS = [self::GET, self::POST];
+    const METHOD_GET = 'GET';
+    const METHOD_POST = 'POST';
+    const SUPPORTED_METHODS = [self::METHOD_GET, self::METHOD_POST];
+    const CONF_BASE_URL = 'base_url';
+    const CONF_VIEW_PATH = 'view_path';
+    const CONF_PUBLIC_PATH = 'public_path';
 
     /**
      * @var string
@@ -58,16 +61,32 @@ class Hmm
 
     public function get(string $path, Closure|array $closure, $beforeFunctions = [])
     {
-        $this->route(self::GET, $path, $closure, $beforeFunctions);
+        $this->route(self::METHOD_GET, $path, $closure, $beforeFunctions);
 
         return $this;
     }
 
     public function post(string $path, Closure|array $closure, $beforeFunctions = [])
     {
-        $this->route(self::POST, $path, $closure, $beforeFunctions);
+        $this->route(self::METHOD_POST, $path, $closure, $beforeFunctions);
 
         return $this;
+    }
+
+    /**
+     * @return \Kykurniawan\Hmm\Request
+     */
+    public function request()
+    {
+        return $this->request;
+    }
+
+    /**
+     * @return \Kykurniawan\Hmm\Response
+     */
+    public function response()
+    {
+        return $this->response;
     }
 
     public function config(string $key, $default = null)
@@ -136,47 +155,31 @@ class Hmm
                     continue;
                 }
 
-                $beforeResult = $this->runBeforeFunction($route->beforeFunctions, $request, $response);
+                $result = $this->runBeforeFunction($route->beforeFunctions, $request, $response);
 
-                if ($beforeResult instanceof Request) {
-                    $result = '';
-                    if (is_array($route->handler)) {
-                        $controller = new $route->handler[0]($this);
-                        if ($controller instanceof Controller == false) {
-                            throw new Exception('Invalid controller class');
+                switch (true) {
+                    case $result instanceof Request:
+                        if (is_array($route->handler)) {
+                            $controller = new $route->handler[0]();
+                            if ($controller instanceof Controller == false) {
+                                throw new Exception('Invalid controller class');
+                            }
+                            $controller->init($this);
+                            $result = call_user_func([$controller, $route->handler[1]], $result, $response);
+                        } else if (is_callable($route->handler)) {
+                            $result = call_user_func($route->handler, $result, $response);
                         }
-                        $controller->init($this);
-                        $result = call_user_func([$controller, $route->handler[1]], $beforeResult, $response);
-                    } else if (is_callable($route->handler)) {
-                        $result = call_user_func($route->handler, $beforeResult, $response);
-                    }
-
-                    if (
-                        is_string($result) ||
-                        is_bool($result) ||
-                        is_numeric($result) ||
-                        is_long($result) ||
-                        is_float($result) ||
-                        is_int($result) ||
-                        is_double($result)
-                    ) {
-                        print($result);
-                    }
-                    exit;
-                } else {
-                    if (
-                        is_string($beforeResult) ||
-                        is_bool($beforeResult) ||
-                        is_numeric($beforeResult) ||
-                        is_long($beforeResult) ||
-                        is_float($beforeResult) ||
-                        is_int($beforeResult) ||
-                        is_double($beforeResult)
-                    ) {
-                        print($beforeResult);
-                    }
-                    exit;
+                        $this->sendResponse($result);
+                        break;
+                    case $result instanceof Response:
+                        $this->sendResponse($result);
+                        break;
+                    default:
+                        $this->sendResponse($result);
+                        break;
                 }
+
+                exit;
             }
 
             throw new PageNotFoundException();
@@ -215,5 +218,45 @@ class Hmm
         }
 
         return $result;
+    }
+
+    private function sendResponse($result)
+    {
+        $code = 200;
+        $content = $result;
+        $headers = [];
+        if ($result instanceof Response) {
+            $code = $result->code;
+            $content = $result->content;
+            $headers = $result->headers;
+        }
+
+        if (
+            is_string($content) ||
+            is_bool($content) ||
+            is_numeric($content) ||
+            is_long($content) ||
+            is_float($content) ||
+            is_int($content) ||
+            is_double($content)
+        ) {
+            http_response_code($code);
+            foreach ($headers as $header) {
+                header($header);
+            }
+            echo $content;
+        } else if (is_array($content)) {
+            $headers[] = 'Content-Type: application/json';
+
+            http_response_code($code);
+            foreach ($headers as $header) {
+                header($header);
+            }
+            echo json_encode($content);
+        } else {
+            if (!is_null($content)) {
+                var_dump($content);
+            }
+        }
     }
 }

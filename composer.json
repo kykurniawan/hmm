@@ -15,5 +15,7 @@
         }
     ],
     "minimum-stability": "dev",
-    "require": {}
+    "require": {
+        "monolog/monolog": "3.x-dev"
+    }
 }

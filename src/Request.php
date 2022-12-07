@@ -7,13 +7,24 @@ class Request
     private string $method;
     private array $params;
     private array $queries;
-    private Hmm $app;
+    private Hmm $hmm;
+    private $url;
 
-    public function __construct(Hmm $app)
+    public function __construct(Hmm $hmm)
     {
-        $this->app = $app;
+        $this->hmm = $hmm;
         $this->method = strtoupper($_SERVER['REQUEST_METHOD']);
         $this->queries = $_GET;
+        $this->url = $_SERVER['REQUEST_SCHEME'] . '://' . $_SERVER['SERVER_NAME'];
+        if ($_SERVER['SERVER_PORT'] != 80 && $_SERVER['SERVER_PORT'] != 443) {
+            $this->url .= ':' . $_SERVER['SERVER_PORT'];
+        }
+        $this->url .= $_SERVER['REQUEST_URI'];
+    }
+
+    public function url()
+    {
+        return $this->url;
     }
 
     public function setParams(array $params)
@@ -26,9 +37,9 @@ class Request
         return $this->method;
     }
 
-    public function app(): Hmm
+    public function hmm(): Hmm
     {
-        return $this->app;
+        return $this->hmm;
     }
 
     public function params($key = null)
