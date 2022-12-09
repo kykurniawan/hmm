@@ -5,6 +5,7 @@ namespace Kykurniawan\Hmm;
 use Closure;
 use Exception;
 use Kykurniawan\Hmm\Exceptions\PageNotFoundException;
+use ReflectionClass;
 use ReflectionFunction;
 use ReflectionMethod;
 
@@ -16,11 +17,6 @@ class Hmm
     const CONF_BASE_URL = 'base_url';
     const CONF_VIEW_PATH = 'view_path';
     const CONF_PUBLIC_PATH = 'public_path';
-
-    /**
-     * @var string
-     */
-    protected $url;
 
     /**
      * @var \Kykurniawan\Hmm\RouteItem[]
@@ -45,32 +41,32 @@ class Hmm
     /**
      * @param string $method
      * @param string $path
-     * @param Closure|array $closure
+     * @param Closure|array|string $handler
      * @param array $beforeFunction
      */
-    public function route(string $method, string $path, Closure|array $closure, $beforeFunctions = [])
+    public function route(string $method, string $path, Closure|array|string $handler, $beforeFunctions = [])
     {
         if (!in_array($method, self::SUPPORTED_METHODS)) {
             throw new Exception('Unsupported method: ' . $method);
         }
 
-        $routeItem = new RouteItem($method, $path, $closure, $beforeFunctions);
+        $routeItem = new RouteItem($method, $path, $handler, $beforeFunctions);
 
         array_push($this->routeItems, $routeItem);
 
         return $this;
     }
 
-    public function get(string $path, Closure|array $closure, $beforeFunctions = [])
+    public function get(string $path, Closure|array|string $handler, $beforeFunctions = [])
     {
-        $this->route(self::METHOD_GET, $path, $closure, $beforeFunctions);
+        $this->route(self::METHOD_GET, $path, $handler, $beforeFunctions);
 
         return $this;
     }
 
-    public function post(string $path, Closure|array $closure, $beforeFunctions = [])
+    public function post(string $path, Closure|array|string $handler, $beforeFunctions = [])
     {
-        $this->route(self::METHOD_POST, $path, $closure, $beforeFunctions);
+        $this->route(self::METHOD_POST, $path, $handler, $beforeFunctions);
 
         return $this;
     }
@@ -162,12 +158,19 @@ class Hmm
                 switch (true) {
                     case $result instanceof Request:
                         if (is_array($route->handler)) {
-                            $controller = new $route->handler[0]();
+                            $controller = new $route->handler[0];
                             if ($controller instanceof Controller == false) {
-                                throw new Exception('Invalid controller class');
+                                throw new Exception('Controller should extends the ' . Controller::class . ' class');
                             }
                             $controller->init($this);
                             $result = $this->runControllerMethod($controller, $route->handler[1], $result, $response);
+                        } else if (is_string($route->handler) && class_exists($route->handler)) {
+                            $invokableController = new $route->handler;
+                            if ($invokableController instanceof Controller == false) {
+                                throw new Exception('Controller should extends the ' . Controller::class . ' class');
+                            }
+                            $invokableController->init($this);
+                            $result = $this->runInvokableController($invokableController, $result, $response);
                         } else if (is_callable($route->handler)) {
                             $result = $this->runClosure($route->handler, $result, $response);
                         }
@@ -224,35 +227,41 @@ class Hmm
 
     private function runClosure($closure, $request, $response)
     {
-        $arguments = [];
 
-        $function = new ReflectionFunction($closure);
-        $functionParameters = $function->getParameters();
-        foreach ($functionParameters as $parameter) {
-            if (is_null($parameter->getType())) {
-                throw new Exception('Please add parameter type for ' . $parameter->getName());
-            }
-            $parameterType = $parameter->getType()->getName();
-            if (!in_array($parameterType, [Request::class, Response::class])) {
-                throw new Exception('Parameter type for ' . $parameter->getName() . ' should be ' . Request::class . ' or ' . Response::class . ', ' . $parameterType . ' given');
-            }
-            if ($parameterType == Request::class) {
-                $arguments[$parameter->getName()] = $request;
-            } else if ($parameterType == Response::class) {
-                $arguments[$parameter->getName()] = $response;
-            }
-        }
+        $functionReflection = new ReflectionFunction($closure);
+        $functionParameters = $functionReflection->getParameters();
+        $arguments = $this->prepareRouteHandlerArguments($functionParameters, $request, $response);
 
-        return $function->invoke(...$arguments);
+        return $functionReflection->invoke(...$arguments);
     }
 
     private function runControllerMethod($controller, $method, $request, $response)
     {
-        $arguments = [];
 
-        $method = new ReflectionMethod($controller, $method);
-        $methodParameters = $method->getParameters();
-        foreach ($methodParameters as $parameter) {
+        $methodReflection = new ReflectionMethod($controller, $method);
+        $methodParameters = $methodReflection->getParameters();
+        $arguments = $this->prepareRouteHandlerArguments($methodParameters, $request, $response);
+
+        return $methodReflection->invoke($controller, ...$arguments);
+    }
+
+    private function runInvokableController($invokableController, $request, $response)
+    {
+        $invokableControllerReflection = new ReflectionClass($invokableController);
+        if (!$invokableControllerReflection->hasMethod('__invoke')) {
+            throw new Exception('Invokable class should have __invoke method');
+        }
+        $invokeMethod = $invokableControllerReflection->getMethod('__invoke');
+        $invokeMethodParameters = $invokeMethod->getParameters();
+        $arguments = $this->prepareRouteHandlerArguments($invokeMethodParameters, $request, $response);
+
+        return $invokeMethod->invoke($invokableController, ...$arguments);
+    }
+
+    private function prepareRouteHandlerArguments($parameters, $request, $response)
+    {
+        $arguments = [];
+        foreach ($parameters as $parameter) {
             if (is_null($parameter->getType())) {
                 throw new Exception('Please add parameter type for ' . $parameter->getName());
             }
@@ -266,8 +275,7 @@ class Hmm
                 $arguments[$parameter->getName()] = $response;
             }
         }
-
-        return $method->invoke(...$arguments);
+        return $arguments;
     }
 
     private function sendResponse($result)
