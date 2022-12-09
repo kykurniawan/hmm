@@ -5,6 +5,8 @@ namespace Kykurniawan\Hmm;
 use Closure;
 use Exception;
 use Kykurniawan\Hmm\Exceptions\PageNotFoundException;
+use ReflectionFunction;
+use ReflectionMethod;
 
 class Hmm
 {
@@ -165,9 +167,9 @@ class Hmm
                                 throw new Exception('Invalid controller class');
                             }
                             $controller->init($this);
-                            $result = call_user_func([$controller, $route->handler[1]], $result, $response);
+                            $result = $this->runControllerMethod($controller, $route->handler[1], $result, $response);
                         } else if (is_callable($route->handler)) {
-                            $result = call_user_func($route->handler, $result, $response);
+                            $result = $this->runClosure($route->handler, $result, $response);
                         }
                         $this->sendResponse($result);
                         break;
@@ -213,11 +215,59 @@ class Hmm
         array_shift($beforeFunctions);
 
         if ($result instanceof Request) {
-            $result = $function($result, $response);
+            $result = $this->runClosure($function, $result, $response);
             $this->runBeforeFunction($beforeFunctions, $result, $response);
         }
 
         return $result;
+    }
+
+    private function runClosure($closure, $request, $response)
+    {
+        $arguments = [];
+
+        $function = new ReflectionFunction($closure);
+        $functionParameters = $function->getParameters();
+        foreach ($functionParameters as $parameter) {
+            if (is_null($parameter->getType())) {
+                throw new Exception('Please add parameter type for ' . $parameter->getName());
+            }
+            $parameterType = $parameter->getType()->getName();
+            if (!in_array($parameterType, [Request::class, Response::class])) {
+                throw new Exception('Parameter type for ' . $parameter->getName() . ' should be ' . Request::class . ' or ' . Response::class . ', ' . $parameterType . ' given');
+            }
+            if ($parameterType == Request::class) {
+                $arguments[$parameter->getName()] = $request;
+            } else if ($parameterType == Response::class) {
+                $arguments[$parameter->getName()] = $response;
+            }
+        }
+
+        return $function->invoke(...$arguments);
+    }
+
+    private function runControllerMethod($controller, $method, $request, $response)
+    {
+        $arguments = [];
+
+        $method = new ReflectionMethod($controller, $method);
+        $methodParameters = $method->getParameters();
+        foreach ($methodParameters as $parameter) {
+            if (is_null($parameter->getType())) {
+                throw new Exception('Please add parameter type for ' . $parameter->getName());
+            }
+            $parameterType = $parameter->getType()->getName();
+            if (!in_array($parameterType, [Request::class, Response::class])) {
+                throw new Exception('Parameter type for ' . $parameter->getName() . ' should be ' . Request::class . ' or ' . Response::class . ', ' . $parameterType . ' given');
+            }
+            if ($parameterType == Request::class) {
+                $arguments[$parameter->getName()] = $request;
+            } else if ($parameterType == Response::class) {
+                $arguments[$parameter->getName()] = $response;
+            }
+        }
+
+        return $method->invoke(...$arguments);
     }
 
     private function sendResponse($result)
