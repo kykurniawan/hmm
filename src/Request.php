@@ -8,17 +8,13 @@ class Request
     private array $params;
     private array $queries;
     private Hmm $hmm;
-    private $url;
+    private $url = '';
 
     public function __construct(Hmm $hmm)
     {
         $this->hmm = $hmm;
         $this->method = strtoupper($_SERVER['REQUEST_METHOD']);
         $this->queries = $_GET;
-        $this->url = $_SERVER['REQUEST_SCHEME'] . '://' . $_SERVER['SERVER_NAME'];
-        if ($_SERVER['SERVER_PORT'] != 80 && $_SERVER['SERVER_PORT'] != 443) {
-            $this->url .= ':' . $_SERVER['SERVER_PORT'];
-        }
         $this->url .= $_SERVER['REQUEST_URI'];
     }
 

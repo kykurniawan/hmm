@@ -35,7 +35,7 @@ class Response
 
     public function view($viewPath, $data = [])
     {
-        $view = new View($this->hmm()->config(Hmm::CONF_VIEW_PATH));
+        $view = new View($this->hmm()->config(Constants::CONF_VIEW_PATH));
         $view->setData($data);
         $this->content = $view->render(str_replace('.', '/', $viewPath));
 

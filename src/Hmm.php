@@ -11,13 +11,6 @@ use ReflectionMethod;
 
 class Hmm
 {
-    const METHOD_GET = 'GET';
-    const METHOD_POST = 'POST';
-    const SUPPORTED_METHODS = [self::METHOD_GET, self::METHOD_POST];
-    const CONF_BASE_URL = 'base_url';
-    const CONF_VIEW_PATH = 'view_path';
-    const CONF_PUBLIC_PATH = 'public_path';
-
     /**
      * @var \Kykurniawan\Hmm\RouteItem[]
      */
@@ -29,6 +22,16 @@ class Hmm
     protected $configurations = [];
 
     /**
+     * @var array
+     */
+    protected $modules = [];
+
+    /**
+     * @var \Kykurniawan\Hmm\Hmm
+     */
+    private static Hmm $instance;
+
+    /**
      * Construct the app
      * 
      * @param array $configurations
@@ -36,6 +39,51 @@ class Hmm
     public function __construct(array $configurations)
     {
         $this->configurations = $configurations;
+        self::$instance = &$this;
+    }
+
+    public static function &getInstance()
+    {
+        return self::$instance;
+    }
+
+    public function loadModule(string $moduleClassName, mixed ...$constructArguments): Hmm
+    {
+        if (!class_exists($moduleClassName)) {
+            throw new Exception('Module ' . $moduleClassName . ' is not exists');
+        }
+
+        $moduleReflection = new ReflectionClass($moduleClassName);
+
+        if (!$moduleReflection->isInstantiable()) {
+            throw new Exception('Module ' . $moduleClassName . ' should have public constructor method');
+        }
+
+        $moduleConstructor = $moduleReflection->getConstructor();
+
+        if (!is_null($moduleConstructor)) {
+            $requiredParameterCount = $moduleConstructor->getNumberOfRequiredParameters();
+
+            if ($requiredParameterCount > 0 && sizeof($constructArguments) != $requiredParameterCount) {
+                throw new Exception('Module ' . $moduleClassName . ' require atleast ' . $requiredParameterCount . ' parameters');
+            }
+        }
+
+        /** @var \Kykurniawan\Hmm\Modules\ModuleInterface */
+        $moduleInstance = $moduleReflection->newInstance(...$constructArguments);
+
+        $this->modules[$moduleInstance->getModuleName()] = $moduleInstance;
+
+        return $this;
+    }
+
+    public function module(string $moduleName)
+    {
+        if (!isset($this->modules[$moduleName])) {
+            throw new Exception('Module ' . $moduleName . ' is not found');
+        }
+
+        return $this->modules[$moduleName];
     }
 
     /**
@@ -46,7 +94,7 @@ class Hmm
      */
     public function route(string $method, string $path, Closure|array|string $handler, $beforeFunctions = [])
     {
-        if (!in_array($method, self::SUPPORTED_METHODS)) {
+        if (!in_array($method, Constants::SUPPORTED_METHODS)) {
             throw new Exception('Unsupported method: ' . $method);
         }
 
@@ -54,21 +102,25 @@ class Hmm
 
         array_push($this->routeItems, $routeItem);
 
-        return $this;
+        return $routeItem;
     }
 
     public function get(string $path, Closure|array|string $handler, $beforeFunctions = [])
     {
-        $this->route(self::METHOD_GET, $path, $handler, $beforeFunctions);
-
-        return $this;
+        return $this->route(Constants::METHOD_GET, $path, $handler, $beforeFunctions);
     }
 
     public function post(string $path, Closure|array|string $handler, $beforeFunctions = [])
     {
-        $this->route(self::METHOD_POST, $path, $handler, $beforeFunctions);
+        return $this->route(Constants::METHOD_POST, $path, $handler, $beforeFunctions);
+    }
 
-        return $this;
+    /**
+     * @return \Kykurniawan\Hmm\RouteItem[]
+     */
+    public function routeItems()
+    {
+        return $this->routeItems;
     }
 
     /**
@@ -109,8 +161,15 @@ class Hmm
                 $currentPath = $_SERVER['PATH_INFO'];
             }
             foreach ($this->routeItems as $route) {
+                /** @var \Kykurniawan\Hmm\RouteItem */
+                $route = $route;
+                $routeHandler = $route->getHandler();
+                $routeMethod = $route->getMethod();
+                $routePath = $route->getPath();
+                $routeBeforeFunctions = $route->getBeforeFunctions();
+
                 $currentPath = trim($currentPath, '/');
-                $path = trim($route->path, '/');
+                $path = trim($routePath, '/');
 
                 $explodedCurrentPath = explode('/', $currentPath);
                 $explodedPath = explode('/', $path);
@@ -149,30 +208,30 @@ class Hmm
                 $request->setParams($params);
                 $response = new Response($this);
 
-                if ($request->method() !== $route->method) {
+                if ($request->method() !== $routeMethod) {
                     continue;
                 }
 
-                $result = $this->runBeforeFunction($route->beforeFunctions, $request, $response);
+                $result = $this->runBeforeFunction($routeBeforeFunctions, $request, $response);
 
                 switch (true) {
                     case $result instanceof Request:
-                        if (is_array($route->handler)) {
-                            $controller = new $route->handler[0];
+                        if (is_array($routeHandler)) {
+                            $controller = new $routeHandler[0];
                             if ($controller instanceof Controller == false) {
                                 throw new Exception('Controller should extends the ' . Controller::class . ' class');
                             }
                             $controller->init($this);
-                            $result = $this->runControllerMethod($controller, $route->handler[1], $result, $response);
-                        } else if (is_string($route->handler) && class_exists($route->handler)) {
-                            $invokableController = new $route->handler;
+                            $result = $this->runControllerMethod($controller, $routeHandler[1], $result, $response);
+                        } else if (is_string($routeHandler) && class_exists($routeHandler)) {
+                            $invokableController = new $routeHandler;
                             if ($invokableController instanceof Controller == false) {
                                 throw new Exception('Controller should extends the ' . Controller::class . ' class');
                             }
                             $invokableController->init($this);
                             $result = $this->runInvokableController($invokableController, $result, $response);
-                        } else if (is_callable($route->handler)) {
-                            $result = $this->runClosure($route->handler, $result, $response);
+                        } else if (is_callable($routeHandler)) {
+                            $result = $this->runClosure($routeHandler, $result, $response);
                         }
                         $this->sendResponse($result);
                         break;
